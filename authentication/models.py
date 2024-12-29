@@ -1,6 +1,8 @@
 from django_mongoengine import Document, fields
 from django.contrib.auth.hashers import make_password, check_password
 from django.utils import timezone
+from django.db import models
+from mongoengine import StringField, DateTimeField, FloatField, SequenceField
 
 class User(Document):
     username = fields.StringField(max_length=150, unique=True, blank=False)
@@ -37,3 +39,18 @@ class User(Document):
 
     def __str__(self):
         return self.username 
+
+class Staff(Document):
+    id = SequenceField(primary_key=True)
+    staff_name = StringField(required=True, max_length=100)
+    role = StringField(required=True, max_length=100)
+    start_date = DateTimeField(required=True)
+    end_date = DateTimeField(required=True)
+    total_loe = FloatField(required=True, min_value=0, max_value=100)
+
+    meta = {
+        'collection': 'staff'
+    }
+
+    def __str__(self):
+        return self.staff_name 

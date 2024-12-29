@@ -4,8 +4,9 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from .models import User
+from .models import User, Staff
 from django.core.exceptions import ObjectDoesNotExist
+from .serializers import StaffSerializer
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -92,3 +93,44 @@ def list_users(request):
         'date_joined': user.date_joined
     } for user in users]
     return Response(user_data) 
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def add_staff(request):
+    print("Received data:", request.data)
+    serializer = StaffSerializer(data=request.data)
+    if serializer.is_valid():
+        staff = Staff(**serializer.validated_data)
+        staff.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def list_staff(request):
+    staff = Staff.objects.all()
+    serializer = StaffSerializer(staff, many=True)
+    return Response(serializer.data) 
+
+@api_view(['DELETE'])
+@permission_classes([AllowAny])
+def delete_staff(request, staff_id):
+    try:
+        staff = Staff.objects.get(id=staff_id)
+        staff.delete()
+        return Response({'message': 'Staff deleted successfully'}, status=status.HTTP_200_OK)
+    except Staff.DoesNotExist:
+        return Response({'error': 'Staff not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['PUT'])
+@permission_classes([AllowAny])
+def update_staff(request, staff_id):
+    try:
+        staff = Staff.objects.get(id=staff_id)
+        serializer = StaffSerializer(staff, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Staff.DoesNotExist:
+        return Response({'error': 'Staff not found'}, status=status.HTTP_404_NOT_FOUND) 

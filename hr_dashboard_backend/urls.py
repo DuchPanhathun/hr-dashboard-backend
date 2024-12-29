@@ -20,4 +20,5 @@ from authentication.views import login_user, register_view, list_users
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('authentication/', include('authentication.urls')),
+    path('api/', include('authentication.urls')),
 ]
