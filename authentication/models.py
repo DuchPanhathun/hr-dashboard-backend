@@ -2,7 +2,7 @@ from django_mongoengine import Document, fields
 from django.contrib.auth.hashers import make_password, check_password
 from django.utils import timezone
 from django.db import models
-from mongoengine import StringField, DateTimeField, FloatField, SequenceField
+from mongoengine import StringField, DateTimeField, FloatField, SequenceField, BooleanField
 
 class User(Document):
     username = fields.StringField(max_length=150, unique=True, blank=False)
@@ -54,3 +54,18 @@ class Staff(Document):
 
     def __str__(self):
         return self.staff_name 
+
+class Notification(Document):
+    id = SequenceField(primary_key=True)
+    message = StringField(required=True)
+    action_type = StringField(required=True)  # 'add', 'update', 'delete'
+    staff_name = StringField(required=True)
+    user_name = StringField(required=True)
+    details = StringField(required=True)
+    timestamp = DateTimeField(default=timezone.now)
+    is_read = BooleanField(default=False)
+
+    meta = {
+        'collection': 'notifications',
+        'ordering': ['-timestamp']
+    } 

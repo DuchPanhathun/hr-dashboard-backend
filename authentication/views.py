@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from .models import User, Staff
+from .models import User, Staff, Notification
 from django.core.exceptions import ObjectDoesNotExist
 from .serializers import StaffSerializer
 
@@ -97,11 +97,20 @@ def list_users(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def add_staff(request):
-    print("Received data:", request.data)
     serializer = StaffSerializer(data=request.data)
     if serializer.is_valid():
         staff = Staff(**serializer.validated_data)
         staff.save()
+        
+        # Create detailed notification
+        Notification(
+            message=f"Added new staff member: {staff.staff_name}",
+            action_type='add',
+            staff_name=staff.staff_name,
+            user_name=request.user.username if request.user.is_authenticated else "System",
+            details=f"Role: {staff.role}, LOE: {staff.total_loe}%"
+        ).save()
+        
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -127,10 +136,56 @@ def delete_staff(request, staff_id):
 def update_staff(request, staff_id):
     try:
         staff = Staff.objects.get(id=staff_id)
+        old_data = {
+            'role': staff.role,
+            'total_loe': staff.total_loe
+        }
+        
         serializer = StaffSerializer(staff, data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            updated_staff = serializer.save()
+            
+            # Create detailed notification for update
+            changes = []
+            if old_data['role'] != updated_staff.role:
+                changes.append(f"Role: {old_data['role']} → {updated_staff.role}")
+            if old_data['total_loe'] != updated_staff.total_loe:
+                changes.append(f"LOE: {old_data['total_loe']}% → {updated_staff.total_loe}%")
+                
+            if changes:
+                Notification(
+                    message=f"Updated staff member: {updated_staff.staff_name}",
+                    action_type='update',
+                    staff_name=updated_staff.staff_name,
+                    user_name=request.user.username if request.user.is_authenticated else "System",
+                    details=", ".join(changes)
+                ).save()
+            
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     except Staff.DoesNotExist:
         return Response({'error': 'Staff not found'}, status=status.HTTP_404_NOT_FOUND) 
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_notifications(request):
+    notifications = Notification.objects.order_by('-timestamp')[:10]  # Get last 10 notifications
+    return Response([{
+        'id': n.id,
+        'message': n.message,
+        'action_type': n.action_type,
+        'staff_name': n.staff_name,
+        'timestamp': n.timestamp,
+        'is_read': n.is_read
+    } for n in notifications])
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def mark_notification_read(request, notification_id):
+    try:
+        notification = Notification.objects.get(id=notification_id)
+        notification.is_read = True
+        notification.save()
+        return Response({'message': 'Notification marked as read'})
+    except Notification.DoesNotExist:
+        return Response({'error': 'Notification not found'}, status=404) 

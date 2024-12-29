@@ -9,4 +9,6 @@ urlpatterns = [
     path('staff/list/', views.list_staff, name='list_staff'),
     path('staff/delete/<int:staff_id>/', views.delete_staff, name='delete_staff'),
     path('staff/update/<int:staff_id>/', views.update_staff, name='update_staff'),
+    path('notifications/', views.get_notifications, name='get_notifications'),
+    path('notifications/<int:notification_id>/read/', views.mark_notification_read, name='mark_notification_read'),
 ] 
