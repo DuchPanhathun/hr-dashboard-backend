@@ -96,7 +96,7 @@ DATABASES = {
 MONGODB_DATABASES = {
     'default': {
         'name': 'hr_dashboard_db',
-        'host': '127.0.0.1',
+        'host': 'mongodb://localhost:27017/hr_dashboard_db',
         'port': 27017,
         'connect': True,
         'maxPoolSize': 10
@@ -106,13 +106,11 @@ MONGODB_DATABASES = {
 # MongoDB connection with error handling and debug info
 try:
     connection = connect(
-        db=MONGODB_DATABASES['default']['name'],
         host=MONGODB_DATABASES['default']['host'],
-        port=MONGODB_DATABASES['default']['port'],
         serverSelectionTimeoutMS=5000,
         maxPoolSize=MONGODB_DATABASES['default']['maxPoolSize'],
     )
-    print(f"Successfully connected to MongoDB at {MONGODB_DATABASES['default']['host']}:{MONGODB_DATABASES['default']['port']}")
+    print(f"Successfully connected to MongoDB at {MONGODB_DATABASES['default']['host']}")
     # Test the connection
     connection.server_info()
 except Exception as e:

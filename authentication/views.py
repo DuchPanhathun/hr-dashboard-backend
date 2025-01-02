@@ -248,6 +248,7 @@ def upload_file(request):
                     'role': str(row['Role']).strip(),
                     'start_date': pd.to_datetime(row['Staff Start Date']).strftime('%Y-%m-%d'),
                     'end_date': pd.to_datetime(row['Staff End Date']).strftime('%Y-%m-%d'),
+                    'total_loe': float(row['LOE 2025 (Average)'])  # Add total_loe field
                 }
 
                 # Create or update staff
