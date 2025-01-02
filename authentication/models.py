@@ -69,3 +69,36 @@ class Notification(Document):
         'collection': 'notifications',
         'ordering': ['-timestamp']
     } 
+
+class Project(Document):
+    id = SequenceField(primary_key=True)
+    award_name = StringField(max_length=200, blank=False)
+    status = StringField(max_length=100, blank=False)
+    project_start_date = DateTimeField(blank=False)
+    project_end_date = DateTimeField(blank=False)
+    loe_percentage = FloatField(min_value=0, max_value=100)
+
+    meta = {
+        'collection': 'projects'
+    }
+
+    def __str__(self):
+        return self.award_name
+
+class ProjectStaff(Document):
+    id = SequenceField(primary_key=True)
+    project = fields.ReferenceField(Project, blank=False)
+    staff = fields.ReferenceField(Staff, blank=False)
+    loe_percentage = FloatField(min_value=0, max_value=100)
+    start_date = DateTimeField()
+    end_date = DateTimeField()
+
+    meta = {
+        'collection': 'project_staff',
+        'indexes': [
+            {'fields': ('project', 'staff'), 'unique': True}
+        ]
+    }
+
+    def __str__(self):
+        return f"{self.project.award_name} - {self.staff.staff_name}" 

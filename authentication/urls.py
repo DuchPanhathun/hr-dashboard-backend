@@ -11,4 +11,8 @@ urlpatterns = [
     path('staff/update/<int:staff_id>/', views.update_staff, name='update_staff'),
     path('notifications/', views.get_notifications, name='get_notifications'),
     path('notifications/<int:notification_id>/read/', views.mark_notification_read, name='mark_notification_read'),
+    path('upload-file/', views.upload_file, name='upload-file'),
+    path('projects/', views.list_projects, name='list_projects'),
+    path('projects/<int:project_id>/staff/', views.get_project_staff, name='get_project_staff'),
+    path('projects/<int:project_id>/', views.delete_project, name='delete_project'),
 ] 
