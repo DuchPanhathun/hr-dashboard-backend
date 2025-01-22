@@ -66,3 +66,10 @@ class ProjectStaffSerializer(serializers.Serializer):
             setattr(instance, attr, value)
         instance.save()
         return instance 
+
+class DocumentSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    title = serializers.CharField()
+    content = serializers.CharField()
+    file_type = serializers.CharField()
+    uploaded_at = serializers.DateTimeField(read_only=True) 

@@ -4,11 +4,28 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from .models import User, Staff, Notification, Project, ProjectStaff
+from .models import User, Staff, Notification, Project, ProjectStaff, Document
 from django.core.exceptions import ObjectDoesNotExist
-from .serializers import StaffSerializer, ProjectSerializer, ProjectStaffSerializer
+from .serializers import StaffSerializer, ProjectSerializer, ProjectStaffSerializer, DocumentSerializer
 import pandas as pd
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.core.files.storage import default_storage
+import os
+from rag_system import create_rag_system, query_rag
+from langchain.document_loaders import PyPDFLoader
+from pathlib import Path
+
+# Global RAG system instance
+rag_qa_chain = None
+
+def initialize_rag():
+    global rag_qa_chain
+    if rag_qa_chain is None:
+        try:
+            rag_qa_chain = create_rag_system()
+        except Exception as e:
+            print(f"Error initializing RAG system: {e}")
+            rag_qa_chain = None
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -381,3 +398,111 @@ def delete_project(request, project_id):
         return Response({'message': 'Project deleted successfully'}, status=status.HTTP_200_OK)
     except Project.DoesNotExist:
         return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND) 
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@parser_classes([MultiPartParser, FormParser])
+def upload_document(request):
+    try:
+        file = request.FILES['file']
+        file_type = os.path.splitext(file.name)[1][1:].lower()
+        
+        if file_type not in ['pdf', 'txt', 'xlsx', 'xls']:
+            return Response({
+                'error': 'Unsupported file type. Only PDF, TXT, and Excel files are allowed.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Define the data directory
+        data_dir = Path('/Users/thun/Desktop/Project/hr-project/hr_dashboard_backend/data')
+        
+        # Create the directory if it doesn't exist
+        data_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create a safe filename
+        safe_filename = file.name.replace(' ', '_')
+        file_path = data_dir / safe_filename
+
+        # Save the file to the data directory
+        with open(file_path, 'wb+') as destination:
+            for chunk in file.chunks():
+                destination.write(chunk)
+        
+        # Extract content based on file type
+        try:
+            if file_type == 'pdf':
+                loader = PyPDFLoader(str(file_path))
+                pages = loader.load()
+                content = '\n'.join([page.page_content for page in pages])
+            elif file_type in ['xlsx', 'xls']:
+                df = pd.read_excel(str(file_path))
+                content = df.to_string(index=False)
+            else:  # txt
+                with open(file_path, 'r') as f:
+                    content = f.read()
+
+            # Create document in database
+            document = Document(
+                title=file.name,
+                content=content,
+                file_type=file_type,
+                uploaded_by=request.user if request.user.is_authenticated else None
+            )
+            document.save()
+
+            # Reinitialize RAG system to include new document
+            initialize_rag()
+
+            return Response({
+                'message': 'Document uploaded successfully',
+                'document': DocumentSerializer(document).data,
+                'file_path': str(file_path)
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            # If there's an error processing the file, delete it
+            if file_path.exists():
+                file_path.unlink()
+            raise Exception(f"Error processing file: {str(e)}")
+
+    except Exception as e:
+        return Response({
+            'error': f'Error uploading document: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def list_documents(request):
+    documents = Document.objects.all().order_by('-uploaded_at')
+    serializer = DocumentSerializer(documents, many=True)
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def rag_query(request):
+    try:
+        question = request.data.get('question')
+        if not question:
+            return Response({
+                'error': 'Question is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Initialize RAG system if not already initialized
+        initialize_rag()
+        
+        if rag_qa_chain is None:
+            return Response({
+                'error': 'RAG system is not initialized'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Query the RAG system
+        result = query_rag(rag_qa_chain, question)
+        
+        return Response({
+            'answer': result['answer'],
+            'sources': result['sources']
+        })
+
+    except Exception as e:
+        return Response({
+            'error': f'Error processing query: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

@@ -15,4 +15,7 @@ urlpatterns = [
     path('projects/', views.list_projects, name='list_projects'),
     path('projects/<int:project_id>/staff/', views.get_project_staff, name='get_project_staff'),
     path('projects/<int:project_id>/', views.delete_project, name='delete_project'),
+    path('documents/upload/', views.upload_document, name='upload_document'),
+    path('documents/', views.list_documents, name='list_documents'),
+    path('rag/query/', views.rag_query, name='rag_query'),
 ] 

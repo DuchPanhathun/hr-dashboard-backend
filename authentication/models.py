@@ -2,7 +2,7 @@ from django_mongoengine import Document, fields
 from django.contrib.auth.hashers import make_password, check_password
 from django.utils import timezone
 from django.db import models
-from mongoengine import StringField, DateTimeField, FloatField, SequenceField, BooleanField
+from mongoengine import StringField, DateTimeField, FloatField, SequenceField, BooleanField, ReferenceField
 
 class User(Document):
     username = fields.StringField(max_length=150, unique=True, blank=False)
@@ -102,3 +102,19 @@ class ProjectStaff(Document):
 
     def __str__(self):
         return f"{self.project.award_name} - {self.staff.staff_name}" 
+
+class Document(Document):
+    id = SequenceField(primary_key=True)
+    title = StringField(required=True)
+    content = StringField(required=True)
+    file_type = StringField(required=True)  # pdf, txt, etc.
+    uploaded_by = ReferenceField(User)
+    uploaded_at = DateTimeField(default=timezone.now)
+    
+    meta = {
+        'collection': 'documents',
+        'indexes': ['title', 'uploaded_at']
+    }
+
+    def __str__(self):
+        return self.title 
