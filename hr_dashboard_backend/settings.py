@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'django_mongoengine',
     'django_mongoengine.mongo_auth',
     'corsheaders',
+    'tasks',
 ]
 
 MIDDLEWARE = [
