@@ -505,4 +505,65 @@ def rag_query(request):
     except Exception as e:
         return Response({
             'error': f'Error processing query: {str(e)}'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def list_project_staff(request):
+    try:
+        project_staff = ProjectStaff.objects.all()
+        serializer = ProjectStaffSerializer(project_staff, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_project_staff_detail(request, project_staff_id):
+    try:
+        project_staff = ProjectStaff.objects.get(id=project_staff_id)
+        serializer = ProjectStaffSerializer(project_staff)
+        return Response(serializer.data)
+    except ProjectStaff.DoesNotExist:
+        return Response({'error': 'Project staff not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def create_project_staff(request):
+    try:
+        serializer = ProjectStaffSerializer(data=request.data)
+        if serializer.is_valid():
+            project_staff = serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['PUT'])
+@permission_classes([AllowAny])
+def update_project_staff(request, project_staff_id):
+    try:
+        project_staff = ProjectStaff.objects.get(id=project_staff_id)
+        serializer = ProjectStaffSerializer(project_staff, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except ProjectStaff.DoesNotExist:
+        return Response({'error': 'Project staff not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['DELETE'])
+@permission_classes([AllowAny])
+def delete_project_staff(request, project_staff_id):
+    try:
+        project_staff = ProjectStaff.objects.get(id=project_staff_id)
+        project_staff.delete()
+        return Response({'message': 'Project staff deleted successfully'}, status=status.HTTP_200_OK)
+    except ProjectStaff.DoesNotExist:
+        return Response({'error': 'Project staff not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

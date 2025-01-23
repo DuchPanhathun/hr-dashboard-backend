@@ -52,20 +52,37 @@ class ProjectSerializer(serializers.Serializer):
 
 class ProjectStaffSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
-    project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.all())
-    staff = serializers.PrimaryKeyRelatedField(queryset=Staff.objects.all())
+    project = ProjectSerializer()  # Nested serializer
+    staff = StaffSerializer()      # Nested serializer
     loe_percentage = serializers.FloatField(min_value=0, max_value=100)
     start_date = serializers.DateTimeField()
     end_date = serializers.DateTimeField()
 
     def create(self, validated_data):
-        return ProjectStaff.objects.create(**validated_data)
+        project_data = validated_data.pop('project')
+        staff_data = validated_data.pop('staff')
+        project = Project.objects.get(id=project_data.get('id'))
+        staff = Staff.objects.get(id=staff_data.get('id'))
+        return ProjectStaff.objects.create(
+            project=project,
+            staff=staff,
+            **validated_data
+        )
 
     def update(self, instance, validated_data):
+        if 'project' in validated_data:
+            project_data = validated_data.pop('project')
+            project = Project.objects.get(id=project_data.get('id'))
+            instance.project = project
+        if 'staff' in validated_data:
+            staff_data = validated_data.pop('staff')
+            staff = Staff.objects.get(id=staff_data.get('id'))
+            instance.staff = staff
+        
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
-        return instance 
+        return instance
 
 class DocumentSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
