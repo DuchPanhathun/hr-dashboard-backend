@@ -1,35 +1,61 @@
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from bson import ObjectId
-from .services import assign_staff_to_projects_90_100
+from .services import assign_staff_to_projects_90_100, assign_staff_with_weights
 import datetime
 import logging
 from .models import Staff, Project, ProjectStaff, Task
 from django.db.models import Sum, F
 from django.utils import timezone
 from .serializers import TaskSerializer, StaffSerializer, ProjectSerializer, ProjectStaffSerializer
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from django.contrib.auth import get_user_model
 
 logger = logging.getLogger(__name__)
 
-@api_view(["POST"])
+@api_view(['POST'])
 @permission_classes([AllowAny])
 def assign_staff(request):
-    """
-    Trigger the staff assignment algorithm
-    """
     try:
-        result = assign_staff_to_projects_90_100()
-        return Response(result, status=status.HTTP_200_OK)
-    except Exception as e:
-        return Response(
-            {
-                "status": "error",
-                "message": str(e)
-            }, 
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        # Get and validate weights from request
+        logger.info(f"Request data: {request.data}")
+        deadline_weight = float(request.data.get('deadlineWeight', 1.0))
+        complexity_weight = float(request.data.get('complexityWeight', 1.0))
+        skill_match_weight = float(request.data.get('skillMatchWeight', 1.0))
+
+        logger.info(f"Weights: deadline={deadline_weight}, complexity={complexity_weight}, skill_match={skill_match_weight}")
+
+        # Validate weight ranges
+        for weight in [deadline_weight, complexity_weight, skill_match_weight]:
+            if not (0 <= weight <= 5):
+                logger.warning(f"Invalid weight value: {weight}")
+                return Response({
+                    'error': 'Weights must be between 0 and 5',
+                    'invalid_weight': weight
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Call assignment service
+        logger.info("Calling assignment service")
+        assignments = assign_staff_with_weights(
+            deadline_weight=deadline_weight,
+            complexity_weight=complexity_weight,
+            skill_match_weight=skill_match_weight
         )
+        logger.info(f"Assignments completed: {assignments}")
+
+        return Response({
+            'message': 'Staff assignments completed successfully',
+            'assignments': assignments
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Error in assign_staff: {str(e)}", exc_info=True)
+        return Response({
+            'detail': str(e),
+            'code': 'server_error'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])

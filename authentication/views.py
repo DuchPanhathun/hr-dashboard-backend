@@ -14,9 +14,12 @@ import os
 from rag_system import create_rag_system, query_rag
 from langchain.document_loaders import PyPDFLoader
 from pathlib import Path
+import logging
 
 # Global RAG system instance
 rag_qa_chain = None
+
+logger = logging.getLogger(__name__)
 
 def initialize_rag():
     global rag_qa_chain
@@ -566,4 +569,44 @@ def delete_project_staff(request, project_staff_id):
     except ProjectStaff.DoesNotExist:
         return Response({'error': 'Project staff not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def debug_token(request):
+    try:
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return Response({'error': 'No Bearer token'}, status=400)
+        
+        token = auth_header.split(' ')[1]
+        
+        # Log token details
+        logger.info(f"Received token: {token[:20]}...")
+        
+        # Check if user exists
+        username = request.data.get('username', '')
+        user = User.objects.filter(username=username).first()
+        
+        if user:
+            logger.info(f"Found user: {user.username}")
+            return Response({
+                'message': 'User found',
+                'username': user.username,
+                'is_active': user.is_active,
+            })
+        else:
+            # List all users for debugging
+            all_users = User.objects.all()
+            usernames = [u.username for u in all_users]
+            logger.info(f"All users in database: {usernames}")
+            
+            return Response({
+                'error': 'User not found',
+                'username_searched': username,
+                'available_users': usernames
+            }, status=404)
+            
+    except Exception as e:
+        logger.error(f"Debug token error: {str(e)}")
+        return Response({'error': str(e)}, status=500) 
