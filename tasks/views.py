@@ -7,12 +7,13 @@ from .services import assign_staff_to_projects_90_100
 import datetime
 import logging
 from authentication.models import Staff, Project, ProjectStaff
-from .models import Task
+from .models import Task, Skill
 from django.db.models import Sum, F
 from django.utils import timezone
 from .serializers import TaskSerializer, StaffSerializer, ProjectSerializer, ProjectStaffSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.contrib.auth import get_user_model
+from django.utils.dateparse import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +47,45 @@ def assign_staff(request):
 def task_list_create(request):
     if request.method == 'GET':
         try:
-            # Use mongoengine's queryset
             tasks = Task.objects.all().order_by('-created_at')
-            serializer = TaskSerializer(tasks, many=True)
-            return Response(serializer.data)
+            tasks_data = []
+            
+            for task in tasks:
+                task_data = {
+                    'id': str(task.id),
+                    'title': task.title,
+                    'required_skills': [
+                        {
+                            'id': str(skill.id),
+                            'name': skill.name,
+                            'category': skill.category
+                        } for skill in task.required_skills
+                    ] if task.required_skills else [],
+                    'required_loe': float(task.required_loe),
+                    'deadline': task.deadline.isoformat() if task.deadline else None,
+                    'status': task.status,
+                    'project': {
+                        'id': str(task.project.id),
+                        'award_name': task.project.award_name
+                    } if task.project else None,
+                    'assigned_staff': {
+                        'id': str(task.assigned_staff.id),
+                        'staff_name': task.assigned_staff.staff_name
+                    } if task.assigned_staff else None,
+                    'complexity_level': task.complexity_level,
+                    'created_at': task.created_at.isoformat() if task.created_at else None,
+                    'updated_at': task.updated_at.isoformat() if task.updated_at else None,
+                    'dependencies': [
+                        {
+                            'id': str(dep.id),
+                            'title': dep.title
+                        } for dep in task.dependencies
+                    ] if task.dependencies else [],
+                    'priority': task.priority
+                }
+                tasks_data.append(task_data)
+            
+            return Response(tasks_data)
         except Exception as e:
             logger.error(f"Error in GET tasks: {str(e)}")
             return Response(
@@ -59,21 +95,60 @@ def task_list_create(request):
     
     elif request.method == 'POST':
         try:
-            logger.info(f"Received task data: {request.data}")
-            serializer = TaskSerializer(data=request.data)
-            if serializer.is_valid():
-                # Create new Task document
-                task = Task(
-                    title=serializer.validated_data['title'],
-                    required_loe=serializer.validated_data['required_loe'],
-                    deadline=serializer.validated_data['deadline'],
-                    status=serializer.validated_data.get('status', 'unassigned'),
-                    created_at=timezone.now()
-                )
-                task.save()
-                return Response(TaskSerializer(task).data, status=status.HTTP_201_CREATED)
-            logger.error(f"Serializer errors: {serializer.errors}")
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            data = request.data
+            logger.info(f"Received task data: {data}")
+
+            # Convert string IDs to references for required fields
+            if 'required_skills' in data:
+                data['required_skills'] = [
+                    Skill.objects.get(id=skill_id) 
+                    for skill_id in data['required_skills']
+                ]
+            
+            if 'project' in data and data['project']:
+                data['project'] = Project.objects.get(id=data['project'])
+                
+            if 'dependencies' in data:
+                data['dependencies'] = [
+                    Task.objects.get(id=task_id) 
+                    for task_id in data['dependencies']
+                ]
+
+            # Create new Task document
+            task = Task(**data)
+            task.save()
+
+            # Return the created task in the same format as GET
+            response_data = {
+                'id': str(task.id),
+                'title': task.title,
+                'required_skills': [
+                    {
+                        'id': str(skill.id),
+                        'name': skill.name,
+                        'category': skill.category
+                    } for skill in task.required_skills
+                ],
+                'required_loe': float(task.required_loe),
+                'deadline': task.deadline.isoformat() if task.deadline else None,
+                'status': task.status,
+                'project': {
+                    'id': str(task.project.id),
+                    'award_name': task.project.award_name
+                } if task.project else None,
+                'complexity_level': task.complexity_level,
+                'created_at': task.created_at.isoformat() if task.created_at else None,
+                'updated_at': task.updated_at.isoformat() if task.updated_at else None,
+                'dependencies': [
+                    {
+                        'id': str(dep.id),
+                        'title': dep.title
+                    } for dep in task.dependencies
+                ],
+                'priority': task.priority
+            }
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
         except Exception as e:
             logger.error(f"Error in POST task: {str(e)}")
             return Response(
@@ -257,12 +332,78 @@ def get_project_staff(request):
 @permission_classes([AllowAny])
 def create_task(request):
     try:
-        serializer = TaskSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        data = request.data.copy()
+
+        # Convert deadline string to datetime object
+        if 'deadline' in data:
+            try:
+                # If receiving date string in format YYYY-MM-DD
+                deadline_str = data['deadline']
+                if isinstance(deadline_str, str):
+                    if 'T' in deadline_str:  # If ISO format with time
+                        data['deadline'] = parse_datetime(deadline_str)
+                    else:  # If just date
+                        data['deadline'] = datetime.datetime.strptime(deadline_str, '%Y-%m-%d')
+            except ValueError as e:
+                return Response(
+                    {'error': f'Invalid deadline format: {str(e)}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Handle required_skills
+        if 'required_skills' in data:
+            data['required_skills'] = [
+                Skill.objects.get(id=skill_id) 
+                for skill_id in data['required_skills']
+            ] if data['required_skills'] else []
+        
+        # Handle project
+        if 'project' in data and data['project']:
+            data['project'] = Project.objects.get(id=data['project'])
+        
+        # Handle dependencies
+        if 'dependencies' in data and data['dependencies']:
+            data['dependencies'] = [
+                Task.objects.get(id=task_id) 
+                for task_id in data['dependencies']
+            ]
+        else:
+            data['dependencies'] = []
+
+        # Create new Task document
+        task = Task(**data)
+        task.save()
+
+        # Return the created task
+        response_data = {
+            'id': str(task.id),
+            'title': task.title,
+            'required_skills': [
+                {
+                    'id': str(skill.id),
+                    'name': skill.name,
+                    'category': skill.category
+                } for skill in task.required_skills
+            ] if task.required_skills else [],
+            'required_loe': float(task.required_loe),
+            'deadline': task.deadline.isoformat() if task.deadline else None,
+            'status': task.status,
+            'project': {
+                'id': str(task.project.id),
+                'award_name': task.project.award_name
+            } if task.project else None,
+            'complexity_level': task.complexity_level,
+            'dependencies': [
+                {
+                    'id': str(dep.id),
+                    'title': dep.title
+                } for dep in task.dependencies
+            ] if task.dependencies else []
+        }
+        
+        return Response(response_data, status=status.HTTP_201_CREATED)
     except Exception as e:
+        logger.error(f"Error in create_task: {str(e)}")
         return Response(
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -329,6 +470,48 @@ def get_task_stats(request):
         })
     except Exception as e:
         logger.error(f"Error getting task stats: {str(e)}")
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def list_skills(request):
+    try:
+        skills = Skill.objects.all()
+        skills_data = [{
+            'id': str(skill.id),
+            'name': skill.name,
+            'category': skill.category
+        } for skill in skills]
+        
+        return Response(skills_data)
+    except Exception as e:
+        logger.error(f"Error fetching skills: {str(e)}")
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def create_skill(request):
+    try:
+        data = request.data
+        skill = Skill(
+            name=data['name'],
+            category=data['category']
+        )
+        skill.save()
+        
+        return Response({
+            'id': str(skill.id),
+            'name': skill.name,
+            'category': skill.category
+        }, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        logger.error(f"Error creating skill: {str(e)}")
         return Response(
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR

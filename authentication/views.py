@@ -662,4 +662,46 @@ def debug_token(request):
             
     except Exception as e:
         logger.error(f"Debug token error: {str(e)}")
-        return Response({'error': str(e)}, status=500) 
+        return Response({'error': str(e)}, status=500)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def list_skills(request):
+    try:
+        skills = Skill.objects.all()
+        skills_data = [{
+            'id': str(skill.id),
+            'name': skill.name,
+            'category': skill.category
+        } for skill in skills]
+        
+        return Response(skills_data)
+    except Exception as e:
+        logger.error(f"Error fetching skills: {str(e)}")
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def create_skill(request):
+    try:
+        data = request.data
+        skill = Skill(
+            name=data['name'],
+            category=data.get('category', 'General')  # Default category if not provided
+        )
+        skill.save()
+        
+        return Response({
+            'id': str(skill.id),
+            'name': skill.name,
+            'category': skill.category
+        }, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        logger.error(f"Error creating skill: {str(e)}")
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        ) 

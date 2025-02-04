@@ -21,8 +21,8 @@ class Task(Document):
         ],
         default='unassigned'
     )
-    project = ReferenceField(Project, required=False)
-    assigned_staff = ReferenceField(Staff, required=False)
+    project = ReferenceField(Project, blank=True)
+    assigned_staff = ReferenceField(Staff, blank=True)
     complexity_level = IntField(
         default=3,
         min_value=1,
@@ -30,7 +30,7 @@ class Task(Document):
     )
     created_at = DateTimeField(default=timezone.now)
     updated_at = DateTimeField(default=timezone.now)
-    dependencies = fields.ListField(ReferenceField('Task'), default=list)
+    dependencies = fields.ListField(fields.LazyReferenceField('self'), blank=True, default=list)
     priority = IntField(min_value=1, max_value=5, default=3)
 
     meta = {
