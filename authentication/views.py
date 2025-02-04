@@ -15,6 +15,9 @@ from rag_system import create_rag_system, query_rag
 from langchain.document_loaders import PyPDFLoader
 from pathlib import Path
 import logging
+from django.http import JsonResponse
+from mongoengine.errors import ValidationError, DoesNotExist
+from bson import ObjectId
 
 # Global RAG system instance
 rag_qa_chain = None
@@ -144,19 +147,19 @@ def list_staff(request):
         staff_data = []
         for s in staff:
             staff_info = {
-                'id': s.id,
+                'id': str(s.id),  # Convert ObjectId to string
                 'staff_name': s.staff_name,
                 'role': s.role,
-                'start_date': s.start_date,
-                'end_date': s.end_date,
-                'total_loe': s.total_loe,
-                'skills': [{'id': skill.id, 'name': skill.name, 'category': skill.category} 
+                'start_date': s.start_date.isoformat() if s.start_date else None,
+                'end_date': s.end_date.isoformat() if s.end_date else None,
+                'total_loe': float(s.total_loe) if s.total_loe else 0.0,
+                'skills': [{'id': str(skill.id), 'name': skill.name, 'category': skill.category} 
                           for skill in s.skills] if s.skills else []
             }
             staff_data.append(staff_info)
         return Response(staff_data)
     except Exception as e:
-        print(f"Error in list_staff: {str(e)}")
+        print(f"Error in list_staff: {str(e)}")  # Add logging
         return Response(
             {'error': str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -546,10 +549,29 @@ def rag_query(request):
 def list_project_staff(request):
     try:
         project_staff = ProjectStaff.objects.all()
-        serializer = ProjectStaffSerializer(project_staff, many=True)
-        return Response(serializer.data)
+        data = [{
+            'id': str(ps.id),  # Convert id to string
+            'project': {
+                'id': str(ps.project.id),  # Convert project id to string
+                'award_name': ps.project.award_name
+            },
+            'staff': {
+                'id': str(ps.staff.id),  # Convert staff id to string
+                'staff_name': ps.staff.staff_name,
+                'role': ps.staff.role,
+                'start_date': ps.staff.start_date.isoformat(),
+                'end_date': ps.staff.end_date.isoformat()
+            },
+            'loe_percentage': float(ps.loe_percentage),  # Ensure this is a float
+            'start_date': ps.start_date.isoformat(),
+            'end_date': ps.end_date.isoformat()
+        } for ps in project_staff]
+        return JsonResponse(data, safe=False)
+    except (ValidationError, DoesNotExist) as e:
+        return JsonResponse({'error': str(e)}, status=500)
     except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        print(f"Error in list_project_staff: {str(e)}")  # Add logging
+        return JsonResponse({'error': str(e)}, status=500)
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
