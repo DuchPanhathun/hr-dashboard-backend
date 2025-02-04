@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'authentication',
     'django_mongoengine',
     'django_mongoengine.mongo_auth',
+    'django_mongoengine.mongo_admin',
     'corsheaders',
     'tasks',
 ]

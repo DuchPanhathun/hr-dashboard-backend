@@ -3,10 +3,11 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from bson import ObjectId
-from .services import assign_staff_to_projects_90_100, assign_staff_with_weights
+from .services import assign_staff_to_projects_90_100
 import datetime
 import logging
-from .models import Staff, Project, ProjectStaff, Task
+from authentication.models import Staff, Project, ProjectStaff
+from .models import Task
 from django.db.models import Sum, F
 from django.utils import timezone
 from .serializers import TaskSerializer, StaffSerializer, ProjectSerializer, ProjectStaffSerializer
@@ -19,36 +20,19 @@ logger = logging.getLogger(__name__)
 @permission_classes([AllowAny])
 def assign_staff(request):
     try:
-        # Get and validate weights from request
-        logger.info(f"Request data: {request.data}")
-        deadline_weight = float(request.data.get('deadlineWeight', 1.0))
-        complexity_weight = float(request.data.get('complexityWeight', 1.0))
-        skill_match_weight = float(request.data.get('skillMatchWeight', 1.0))
-
-        logger.info(f"Weights: deadline={deadline_weight}, complexity={complexity_weight}, skill_match={skill_match_weight}")
-
-        # Validate weight ranges
-        for weight in [deadline_weight, complexity_weight, skill_match_weight]:
-            if not (0 <= weight <= 5):
-                logger.warning(f"Invalid weight value: {weight}")
-                return Response({
-                    'error': 'Weights must be between 0 and 5',
-                    'invalid_weight': weight
-                }, status=status.HTTP_400_BAD_REQUEST)
-
+        logger.info("Starting staff assignment process")
+        
         # Call assignment service
-        logger.info("Calling assignment service")
-        assignments = assign_staff_with_weights(
-            deadline_weight=deadline_weight,
-            complexity_weight=complexity_weight,
-            skill_match_weight=skill_match_weight
-        )
+        assignments = assign_staff_to_projects_90_100()
         logger.info(f"Assignments completed: {assignments}")
 
-        return Response({
-            'message': 'Staff assignments completed successfully',
-            'assignments': assignments
-        }, status=status.HTTP_200_OK)
+        if isinstance(assignments, dict) and assignments.get('status') == 'success':
+            return Response(assignments, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'error': 'Assignment failed',
+                'detail': assignments
+            }, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
         logger.error(f"Error in assign_staff: {str(e)}", exc_info=True)

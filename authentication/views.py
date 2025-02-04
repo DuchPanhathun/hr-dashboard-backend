@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from .models import User, Staff, Notification, Project, ProjectStaff, Document
+from .models import User, Staff, Notification, Project, ProjectStaff, Document, Skill
 from django.core.exceptions import ObjectDoesNotExist
 from .serializers import StaffSerializer, ProjectSerializer, ProjectStaffSerializer, DocumentSerializer
 import pandas as pd
@@ -141,10 +141,22 @@ def add_staff(request):
 def list_staff(request):
     try:
         staff = Staff.objects.all()
-        serializer = StaffSerializer(staff, many=True)
-        return Response(serializer.data)
+        staff_data = []
+        for s in staff:
+            staff_info = {
+                'id': s.id,
+                'staff_name': s.staff_name,
+                'role': s.role,
+                'start_date': s.start_date,
+                'end_date': s.end_date,
+                'total_loe': s.total_loe,
+                'skills': [{'id': skill.id, 'name': skill.name, 'category': skill.category} 
+                          for skill in s.skills] if s.skills else []
+            }
+            staff_data.append(staff_info)
+        return Response(staff_data)
     except Exception as e:
-        print(f"Error in list_staff: {str(e)}")  # Add debugging
+        print(f"Error in list_staff: {str(e)}")
         return Response(
             {'error': str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -250,7 +262,8 @@ def upload_file(request):
             'status': 'Status of Award',
             'project_start_date': 'Project Start Date',
             'project_end_date': 'Project End Date',
-            'loe_percentage': 'LOE 2025 (Average)'  # Make sure this matches exactly
+            'loe_percentage': 'LOE 2025 (Average)',
+            'skills': 'Skill',
         }
 
         # Create a new dataframe with renamed columns
@@ -268,14 +281,32 @@ def upload_file(request):
                     'role': str(row['Role']).strip(),
                     'start_date': pd.to_datetime(row['Staff Start Date']).strftime('%Y-%m-%d'),
                     'end_date': pd.to_datetime(row['Staff End Date']).strftime('%Y-%m-%d'),
-                    'total_loe': float(row['LOE 2025 (Average)'])  # Add total_loe field
+                    'total_loe': float(row['LOE 2025 (Average)']),
+                    'skills': []
                 }
+
+                # Process skills if they exist in the row
+                if 'Skill' in row and pd.notna(row['Skill']):
+                    skills_str = str(row['Skill']).strip()
+                    if skills_str:
+                        # Split skills by comma if multiple skills are provided
+                        skill_names = [s.strip() for s in skills_str.split(',')]
+                        for skill_name in skill_names:
+                            # Create or get skill
+                            skill, created = Skill.objects.get_or_create(
+                                name=skill_name,
+                                defaults={'category': 'General'}  # Default category
+                            )
+                            staff_data['skills'].append(skill)
 
                 # Create or update staff
                 try:
                     staff = Staff.objects.get(staff_name=staff_data['staff_name'])
                     for key, value in staff_data.items():
-                        setattr(staff, key, value)
+                        if key == 'skills':
+                            staff.skills = value
+                        else:
+                            setattr(staff, key, value)
                     staff.save()
                 except Staff.DoesNotExist:
                     staff = Staff.objects.create(**staff_data)
@@ -311,7 +342,7 @@ def upload_file(request):
                 )
 
             except Exception as row_error:
-                print(f"Error processing row {index + 1}: {str(row_error)}")  # Add debugging
+                print(f"Error processing row {index + 1}: {str(row_error)}")
                 return Response(
                     {'error': f'Error processing row {index + 1}: {str(row_error)}'}, 
                     status=status.HTTP_400_BAD_REQUEST
@@ -323,7 +354,7 @@ def upload_file(request):
         )
 
     except Exception as e:
-        print(f"Error in upload_file: {str(e)}")  # Add debugging
+        print(f"Error in upload_file: {str(e)}")
         return Response(
             {
                 'error': 'Error processing file',

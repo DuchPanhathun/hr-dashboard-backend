@@ -1,5 +1,10 @@
 from rest_framework import serializers
-from .models import Staff, Project, ProjectStaff
+from .models import Staff, Project, ProjectStaff, Skill
+
+class SkillSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    name = serializers.CharField(max_length=100)
+    category = serializers.CharField(max_length=100)
 
 class StaffSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
@@ -8,6 +13,7 @@ class StaffSerializer(serializers.Serializer):
     start_date = serializers.DateTimeField()
     end_date = serializers.DateTimeField()
     total_loe = serializers.FloatField(min_value=0, max_value=100)
+    skills = SkillSerializer(many=True, required=False)
     projects = serializers.SerializerMethodField()
 
     def get_projects(self, obj):
@@ -22,16 +28,24 @@ class StaffSerializer(serializers.Serializer):
         } for ps in project_staff]
 
     def create(self, validated_data):
-        return Staff.objects.create(**validated_data)
+        skills_data = validated_data.pop('skills', [])
+        staff = Staff.objects.create(**validated_data)
+        staff.skills = [Skill.objects.get(id=skill['id']) for skill in skills_data]
+        staff.save()
+        return staff
 
     def update(self, instance, validated_data):
+        if 'skills' in validated_data:
+            skills_data = validated_data.pop('skills')
+            instance.skills = [Skill.objects.get(id=skill['id']) for skill in skills_data]
+        
         instance.staff_name = validated_data.get('staff_name', instance.staff_name)
         instance.role = validated_data.get('role', instance.role)
         instance.start_date = validated_data.get('start_date', instance.start_date)
         instance.end_date = validated_data.get('end_date', instance.end_date)
         instance.total_loe = validated_data.get('total_loe', instance.total_loe)
         instance.save()
-        return instance 
+        return instance
 
 class ProjectSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)

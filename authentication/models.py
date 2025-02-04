@@ -2,7 +2,7 @@ from django_mongoengine import Document, fields
 from django.contrib.auth.hashers import make_password, check_password
 from django.utils import timezone
 from django.db import models
-from mongoengine import StringField, DateTimeField, FloatField, SequenceField, BooleanField, ReferenceField
+from mongoengine import StringField, DateTimeField, FloatField, SequenceField, BooleanField, ReferenceField, IntField
 
 class User(Document):
     username = fields.StringField(max_length=150, unique=True, blank=False)
@@ -40,6 +40,14 @@ class User(Document):
     def __str__(self):
         return self.username 
 
+class Skill(Document):
+    name = StringField(max_length=100, unique=True)
+    category = StringField(max_length=100)
+
+    meta = {
+        'collection': 'skills'
+    }
+
 class Staff(Document):
     id = SequenceField(primary_key=True)
     staff_name = StringField(required=True, max_length=100)
@@ -47,6 +55,7 @@ class Staff(Document):
     start_date = DateTimeField(required=True)
     end_date = DateTimeField(required=True)
     total_loe = FloatField(required=True, min_value=0, max_value=100)
+    skills = fields.ListField(ReferenceField(Skill), default=list)
 
     meta = {
         'collection': 'staff'
@@ -77,6 +86,7 @@ class Project(Document):
     project_start_date = DateTimeField(blank=False)
     project_end_date = DateTimeField(blank=False)
     loe_percentage = FloatField(min_value=0, max_value=100)
+    required_loe = FloatField(default=0, min_value=0, max_value=100)
 
     meta = {
         'collection': 'projects'
@@ -103,7 +113,7 @@ class ProjectStaff(Document):
     def __str__(self):
         return f"{self.project.award_name} - {self.staff.staff_name}" 
 
-class Document(Document):
+class FileDocument(Document):
     id = SequenceField(primary_key=True)
     title = StringField(required=True)
     content = StringField(required=True)
@@ -118,3 +128,15 @@ class Document(Document):
 
     def __str__(self):
         return self.title 
+
+class StaffSkill(Document):
+    staff = ReferenceField('Staff')
+    skill = ReferenceField('Skill')
+    proficiency_level = IntField(min_value=1, max_value=5)
+
+    meta = {
+        'collection': 'staff_skills',
+        'indexes': [
+            {'fields': ('staff', 'skill'), 'unique': True}
+        ]
+    } 

@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django_mongoengine import mongo_admin as admin
-from .models import User
+from .models import User, Staff, Project, ProjectStaff, Skill, StaffSkill, FileDocument
 
 @admin.register(User)
 class UserAdmin(admin.DocumentAdmin):
@@ -14,3 +14,10 @@ class UserAdmin(admin.DocumentAdmin):
         ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser')}),
         ('Important dates', {'fields': ('last_login', 'date_joined')}),
     ) 
+
+admin.site.register(Staff)
+admin.site.register(Project)
+admin.site.register(ProjectStaff)
+admin.site.register(Skill)
+admin.site.register(StaffSkill)
+admin.site.register(FileDocument)

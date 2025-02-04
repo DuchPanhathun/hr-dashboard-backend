@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import Staff, Project, ProjectStaff, Task
+from authentication.models import Staff, Project, ProjectStaff
+from .models import Task
 from bson import ObjectId
 from authentication.serializers import StaffSerializer
 from rest_framework_mongoengine import serializers

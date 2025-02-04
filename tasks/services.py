@@ -210,106 +210,6 @@ def calculate_staff_score(staff):
 
     return scores
 
-def check_staff_task_compatibility(staff, task, staff_scores):
-    """
-    Check if a staff member is compatible with a task.
-    Returns a compatibility score and reason.
-    """
-    compatibility = {
-        'score': 0,
-        'reasons': []
-    }
-
-    # Check workload capacity
-    if staff_scores['workload_capacity'] < task.required_loe:
-        compatibility['reasons'].append(
-            f"Insufficient capacity: {staff_scores['workload_capacity']}% available, {task.required_loe}% needed"
-        )
-        return compatibility
-
-    # Check experience level vs task complexity
-    exp_match = 1 - (abs(staff_scores['experience_level'] - task.complexity_level) / 5)
-    if exp_match < 0.6:  # Less than 60% match
-        compatibility['reasons'].append(
-            f"Experience mismatch: Staff level {staff_scores['experience_level']}, Task complexity {task.complexity_level}"
-        )
-
-    # Use new skill match calculation
-    skill_match_result = calculate_skill_match_score(task.required_skills, staff.skills)
-    if skill_match_result['score'] < 0.5:  # Less than 50% skill match
-        compatibility['reasons'].append(
-            f"Skill mismatch: Missing skills: {', '.join(skill_match_result['missing_skills'])}"
-        )
-
-    # Calculate overall compatibility score
-    compatibility['score'] = (exp_match + skill_match_result['score']) / 2
-    
-    return compatibility
-
-def assign_staff_with_weights(deadline_weight=1.0, complexity_weight=1.0, skill_match_weight=1.0, min_score_threshold=0.4):
-    """
-    Assigns staff to tasks based on weighted criteria and staff compatibility.
-    Returns a list of assignment strings.
-    """
-    assignments = []
-    unassigned_tasks = Task.objects.filter(status='unassigned')
-    available_staff = Staff.objects.all()
-
-    if not unassigned_tasks or not available_staff:
-        return ["No unassigned tasks or available staff found"]
-
-    # Calculate staff scores once
-    staff_scores = {staff.id: calculate_staff_score(staff) for staff in available_staff}
-
-    for task in unassigned_tasks:
-        best_score = -1
-        best_staff = None
-        best_compatibility = None
-
-        for staff in available_staff:
-            # Check basic compatibility first
-            compatibility = check_staff_task_compatibility(staff, task, staff_scores[staff.id])
-            
-            if compatibility['score'] < 0.6:  # Basic compatibility threshold
-                continue
-
-            # Calculate weighted score as before
-            days_until_deadline = (task.deadline - timezone.now()).days
-            deadline_score = 1.0 / max(days_until_deadline, 1)
-
-            total_score = (
-                deadline_weight * deadline_score +
-                complexity_weight * compatibility['score'] +
-                skill_match_weight * (staff_scores[staff.id]['skill_level'] / 5)
-            ) * (staff_scores[staff.id]['workload_capacity'] / 100)
-
-            normalized_score = total_score / (deadline_weight + complexity_weight + skill_match_weight)
-
-            if normalized_score > best_score and normalized_score >= min_score_threshold:
-                best_score = normalized_score
-                best_staff = staff
-                best_compatibility = compatibility
-
-        if best_staff:
-            task.assigned_staff = best_staff
-            task.status = 'assigned'
-            task.save()
-            assignments.append(
-                f"Assigned '{task.title}' to {best_staff.staff_name}\n"
-                f"Match Score: {best_score:.2f}\n"
-                f"Capacity: {staff_scores[best_staff.id]['workload_capacity']}%\n"
-                f"Experience Level: {staff_scores[best_staff.id]['experience_level']}/5"
-            )
-        else:
-            reasons = "No suitable staff found. Requirements not met:"
-            for staff in available_staff:
-                compatibility = check_staff_task_compatibility(staff, task, staff_scores[staff.id])
-                if compatibility['reasons']:
-                    reasons += f"\n{staff.staff_name}: {', '.join(compatibility['reasons'])}"
-            assignments.append(f"Could not assign task '{task.title}'. {reasons}")
-
-    return assignments
-
 def calculate_skill_match_score(required_skills, staff_skills):
     """
     Calculate a skill match score between required skills and staff skills.
@@ -347,3 +247,39 @@ def calculate_skill_match_score(required_skills, staff_skills):
         'missing_skills': list(missing_skills),
         'extra_skills': list(extra_skills)
     }
+    
+def check_staff_task_compatibility(staff, task, staff_scores):
+    """
+    Check if a staff member is compatible with a task.
+    Returns a compatibility score and reason.
+    """
+    compatibility = {
+        'score': 0,
+        'reasons': []
+    }
+
+    # Check workload capacity
+    if staff_scores['workload_capacity'] < task.required_loe:
+        compatibility['reasons'].append(
+            f"Insufficient capacity: {staff_scores['workload_capacity']}% available, {task.required_loe}% needed"
+        )
+        return compatibility
+
+    # Check experience leve l vs task complexity
+    exp_match = 1 - (abs(staff_scores['experience_level'] - task.complexity_level) / 5)
+    if exp_match < 0.6:  # Less than 60% match
+        compatibility['reasons'].append(
+            f"Experience mismatch: Staff level {staff_scores['experience_level']}, Task complexity {task.complexity_level}"
+        )
+
+    # Use new skill match calculation
+    skill_match_result = calculate_skill_match_score(task.required_skills, staff.skills)
+    if skill_match_result['score'] < 0.5:  # Less than 50% skill match
+        compatibility['reasons'].append(
+            f"Skill mismatch: Missing skills: {', '.join(skill_match_result['missing_skills'])}"
+        )
+
+    # Calculate overall compatibility score
+    compatibility['score'] = (exp_match + skill_match_result['score']) / 2
+    
+    return compatibility
