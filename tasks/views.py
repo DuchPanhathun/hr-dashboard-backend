@@ -47,10 +47,45 @@ def assign_staff(request):
 def task_list_create(request):
     if request.method == 'GET':
         try:
-            tasks = Task.objects.all().order_by('-created_at')
-            tasks_data = []
+            # Get query parameters
+            sort_by = request.GET.get('sortBy', 'deadline')  # default to deadline
+            availability_threshold = float(request.GET.get('availabilityThreshold', 0))
+            skill_filter = request.GET.get('skillFilter', 'all')
             
+            # Start with all tasks
+            tasks = Task.objects.all()
+            
+            # Apply skill filter if specified
+            if skill_filter != 'all':
+                tasks = tasks.filter(required_skills__category=skill_filter)
+            
+            # Apply sorting
+            if sort_by == 'deadline':
+                tasks = tasks.order_by('deadline')
+            elif sort_by == 'effort':
+                tasks = tasks.order_by('-required_loe')
+            elif sort_by == 'project':
+                tasks = tasks.order_by('project__award_name')
+            
+            # Serialize tasks
+            tasks_data = []
             for task in tasks:
+                # Safely get dependencies
+                dependencies_data = []
+                if hasattr(task, 'dependencies') and task.dependencies:
+                    try:
+                        for dep_id in task.dependencies:
+                            try:
+                                dep_task = Task.objects.get(id=dep_id)
+                                dependencies_data.append({
+                                    'id': str(dep_task.id),
+                                    'title': dep_task.title
+                                })
+                            except Task.DoesNotExist:
+                                continue
+                    except Exception as e:
+                        logger.warning(f"Error processing dependencies for task {task.id}: {str(e)}")
+
                 task_data = {
                     'id': str(task.id),
                     'title': task.title,
@@ -75,19 +110,14 @@ def task_list_create(request):
                     'complexity_level': task.complexity_level,
                     'created_at': task.created_at.isoformat() if task.created_at else None,
                     'updated_at': task.updated_at.isoformat() if task.updated_at else None,
-                    'dependencies': [
-                        {
-                            'id': str(dep.id),
-                            'title': dep.title
-                        } for dep in task.dependencies
-                    ] if task.dependencies else [],
-                    'priority': task.priority
+                    'dependencies': dependencies_data
                 }
                 tasks_data.append(task_data)
             
             return Response(tasks_data)
+            
         except Exception as e:
-            logger.error(f"Error in GET tasks: {str(e)}")
+            logger.error(f"Error in GET tasks: {str(e)}", exc_info=True)
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -458,9 +488,9 @@ def get_project_staff(request):
 def get_task_stats(request):
     try:
         total_tasks = Task.objects.count()
-        unassigned_tasks = Task.objects(status='unassigned').count()
-        in_progress_tasks = Task.objects(status='in_progress').count()
-        completed_tasks = Task.objects(status='completed').count()
+        unassigned_tasks = Task.objects.filter(status='unassigned').count()
+        in_progress_tasks = Task.objects.filter(status='in_progress').count()
+        completed_tasks = Task.objects.filter(status='completed').count()
         
         return Response({
             'total': total_tasks,
@@ -469,7 +499,7 @@ def get_task_stats(request):
             'completed': completed_tasks
         })
     except Exception as e:
-        logger.error(f"Error getting task stats: {str(e)}")
+        logger.error(f"Error getting task stats: {str(e)}", exc_info=True)
         return Response(
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
