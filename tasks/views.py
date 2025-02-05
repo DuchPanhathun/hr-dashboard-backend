@@ -160,7 +160,7 @@ def task_list_create(request):
                     } for skill in task.required_skills
                 ],
                 'required_loe': float(task.required_loe),
-                'deadline': task.deadline.isoformat() if task.deadline else None,
+                'deadline': task.deadline if isinstance(task.deadline, str) else task.deadline.isoformat() if task.deadline else None,
                 'status': task.status,
                 'project': {
                     'id': str(task.project.id),
