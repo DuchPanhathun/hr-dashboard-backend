@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from bson import ObjectId
 from .services import assign_staff_to_projects_90_100
-import datetime
+from datetime import datetime
 import logging
 from authentication.models import Staff, Project, ProjectStaff
 from .models import Task, Skill
@@ -14,6 +14,7 @@ from .serializers import TaskSerializer, StaffSerializer, ProjectSerializer, Pro
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.contrib.auth import get_user_model
 from django.utils.dateparse import parse_datetime
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -28,18 +29,23 @@ def assign_staff(request):
         logger.info(f"Assignments completed: {assignments}")
 
         if isinstance(assignments, dict) and assignments.get('status') == 'success':
-            return Response(assignments, status=status.HTTP_200_OK)
-        else:
             return Response({
-                'error': 'Assignment failed',
-                'detail': assignments
+                'status': 'success',
+                'assignments': assignments.get('assignments', [])
+            }, status=status.HTTP_200_OK)
+        else:
+            logger.error(f"Assignment failed with result: {assignments}")
+            return Response({
+                'status': 'error',
+                'detail': 'Assignment process failed',
+                'error_data': assignments
             }, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
         logger.error(f"Error in assign_staff: {str(e)}", exc_info=True)
         return Response({
-            'detail': str(e),
-            'code': 'server_error'
+            'status': 'error',
+            'detail': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET', 'POST'])
@@ -70,22 +76,6 @@ def task_list_create(request):
             # Serialize tasks
             tasks_data = []
             for task in tasks:
-                # Safely get dependencies
-                dependencies_data = []
-                if hasattr(task, 'dependencies') and task.dependencies:
-                    try:
-                        for dep_id in task.dependencies:
-                            try:
-                                dep_task = Task.objects.get(id=dep_id)
-                                dependencies_data.append({
-                                    'id': str(dep_task.id),
-                                    'title': dep_task.title
-                                })
-                            except Task.DoesNotExist:
-                                continue
-                    except Exception as e:
-                        logger.warning(f"Error processing dependencies for task {task.id}: {str(e)}")
-
                 task_data = {
                     'id': str(task.id),
                     'title': task.title,
@@ -109,8 +99,7 @@ def task_list_create(request):
                     } if task.assigned_staff else None,
                     'complexity_level': task.complexity_level,
                     'created_at': task.created_at.isoformat() if task.created_at else None,
-                    'updated_at': task.updated_at.isoformat() if task.updated_at else None,
-                    'dependencies': dependencies_data
+                    'updated_at': task.updated_at.isoformat() if task.updated_at else None
                 }
                 tasks_data.append(task_data)
             
@@ -125,30 +114,67 @@ def task_list_create(request):
     
     elif request.method == 'POST':
         try:
-            data = request.data
-            logger.info(f"Received task data: {data}")
-
-            # Convert string IDs to references for required fields
-            if 'required_skills' in data:
-                data['required_skills'] = [
-                    Skill.objects.get(id=skill_id) 
-                    for skill_id in data['required_skills']
-                ]
+            data = request.data.copy()
+            logger.info("Backend - Received task data: %s", data)
             
-            if 'project' in data and data['project']:
-                data['project'] = Project.objects.get(id=data['project'])
-                
-            if 'dependencies' in data:
-                data['dependencies'] = [
-                    Task.objects.get(id=task_id) 
-                    for task_id in data['dependencies']
-                ]
+            # Convert deadline string to datetime object if present
+            if 'deadline' in data:
+                try:
+                    deadline_str = data['deadline']
+                    if isinstance(deadline_str, str):
+                        # Convert to datetime at midnight (00:00:00)
+                        data['deadline'] = datetime.strptime(deadline_str, '%Y-%m-%d')
+                        logger.info(f"Parsed deadline: {data['deadline']}")
+                except ValueError as e:
+                    logger.error(f"Deadline parsing error: {str(e)}")
+                    return Response(
+                        {'error': f'Invalid deadline format. Use YYYY-MM-DD format.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
-            # Create new Task document
+            # Handle required_skills conversion
+            if 'required_skills' in data:
+                try:
+                    skill_ids = data['required_skills']
+                    skills = []
+                    for skill_id in skill_ids:
+                        try:
+                            skill = Skill.objects.get(id=skill_id)
+                            skills.append(skill)
+                        except Skill.DoesNotExist:
+                            return Response(
+                                {'error': f'Skill with ID {skill_id} not found'},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                    data['required_skills'] = skills
+                except Exception as e:
+                    logger.error(f"Error processing skills: {str(e)}")
+                    return Response(
+                        {'error': f'Error processing skills: {str(e)}'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Handle project reference
+            if 'project' in data and data['project']:
+                try:
+                    project_id = data['project']
+                    logger.info("Backend - Processing project ID: %s", project_id)
+                    data['project'] = Project.objects.get(id=project_id)
+                    logger.info("Backend - Found project: %s", data['project'].award_name)
+                except Project.DoesNotExist:
+                    logger.error("Backend - Project not found: %s", project_id)
+                    return Response(
+                        {'error': 'Project not found'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Create task
+            logger.info("Backend - Creating task with processed data: %s", data)
             task = Task(**data)
             task.save()
+            logger.info("Backend - Task created successfully with ID: %s", task.id)
 
-            # Return the created task in the same format as GET
+            # Prepare response
             response_data = {
                 'id': str(task.id),
                 'title': task.title,
@@ -160,27 +186,22 @@ def task_list_create(request):
                     } for skill in task.required_skills
                 ],
                 'required_loe': float(task.required_loe),
-                'deadline': task.deadline if isinstance(task.deadline, str) else task.deadline.isoformat() if task.deadline else None,
+                'deadline': task.deadline.strftime('%Y-%m-%d'),  # Format as YYYY-MM-DD
                 'status': task.status,
                 'project': {
                     'id': str(task.project.id),
                     'award_name': task.project.award_name
                 } if task.project else None,
                 'complexity_level': task.complexity_level,
-                'created_at': task.created_at.isoformat() if task.created_at else None,
-                'updated_at': task.updated_at.isoformat() if task.updated_at else None,
-                'dependencies': [
-                    {
-                        'id': str(dep.id),
-                        'title': dep.title
-                    } for dep in task.dependencies
-                ],
-                'priority': task.priority
+                'created_at': task.created_at.strftime('%Y-%m-%d'),  # Format as YYYY-MM-DD
+                'updated_at': task.updated_at.strftime('%Y-%m-%d'),  # Format as YYYY-MM-DD
             }
             
+            logger.info("Backend - Sending response: %s", response_data)
             return Response(response_data, status=status.HTTP_201_CREATED)
+            
         except Exception as e:
-            logger.error(f"Error in POST task: {str(e)}")
+            logger.error(f"Backend - Unexpected error: {str(e)}", exc_info=True)
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -363,45 +384,46 @@ def get_project_staff(request):
 def create_task(request):
     try:
         data = request.data.copy()
-
-        # Convert deadline string to datetime object
-        if 'deadline' in data:
-            try:
-                # If receiving date string in format YYYY-MM-DD
-                deadline_str = data['deadline']
-                if isinstance(deadline_str, str):
-                    if 'T' in deadline_str:  # If ISO format with time
-                        data['deadline'] = parse_datetime(deadline_str)
-                    else:  # If just date
-                        data['deadline'] = datetime.datetime.strptime(deadline_str, '%Y-%m-%d')
-            except ValueError as e:
-                return Response(
-                    {'error': f'Invalid deadline format: {str(e)}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        logger.debug(f"Received task data: {data}")
 
         # Handle required_skills
         if 'required_skills' in data:
-            data['required_skills'] = [
-                Skill.objects.get(id=skill_id) 
-                for skill_id in data['required_skills']
-            ] if data['required_skills'] else []
-        
+            skill_ids = data['required_skills']
+            # Remove the skill_ids assignment from data dictionary
+            # as we'll set the skills directly
+            data.pop('required_skills')
+            
+            # Create the task first without skills
+            task = Task(**data)
+            
+            # Then set the skills separately
+            skills = []
+            for skill_id in skill_ids:
+                try:
+                    skill = Skill.objects.get(id=skill_id)
+                    skills.append(skill)
+                except Skill.DoesNotExist:
+                    return Response(
+                        {'error': f'Skill with ID {skill_id} not found'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Set the skills directly
+            task.required_skills = skills
+            
+        else:
+            task = Task(**data)
+
         # Handle project
         if 'project' in data and data['project']:
-            data['project'] = Project.objects.get(id=data['project'])
-        
-        # Handle dependencies
-        if 'dependencies' in data and data['dependencies']:
-            data['dependencies'] = [
-                Task.objects.get(id=task_id) 
-                for task_id in data['dependencies']
-            ]
-        else:
-            data['dependencies'] = []
+            try:
+                task.project = Project.objects.get(id=data['project'])
+            except Project.DoesNotExist:
+                return Response(
+                    {'error': f'Project not found'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        # Create new Task document
-        task = Task(**data)
         task.save()
 
         # Return the created task
@@ -414,7 +436,7 @@ def create_task(request):
                     'name': skill.name,
                     'category': skill.category
                 } for skill in task.required_skills
-            ] if task.required_skills else [],
+            ],
             'required_loe': float(task.required_loe),
             'deadline': task.deadline.isoformat() if task.deadline else None,
             'status': task.status,
@@ -423,17 +445,14 @@ def create_task(request):
                 'award_name': task.project.award_name
             } if task.project else None,
             'complexity_level': task.complexity_level,
-            'dependencies': [
-                {
-                    'id': str(dep.id),
-                    'title': dep.title
-                } for dep in task.dependencies
-            ] if task.dependencies else []
+            'created_at': task.created_at.isoformat() if task.created_at else None,
+            'updated_at': task.updated_at.isoformat() if task.updated_at else None,
         }
         
         return Response(response_data, status=status.HTTP_201_CREATED)
+        
     except Exception as e:
-        logger.error(f"Error in create_task: {str(e)}")
+        logger.error(f"Unexpected error in create_task: {str(e)}")
         return Response(
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -542,6 +561,44 @@ def create_skill(request):
         }, status=status.HTTP_201_CREATED)
     except Exception as e:
         logger.error(f"Error creating skill: {str(e)}")
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def complete_task(request, task_id):
+    try:
+        # Convert string ID to ObjectId
+        task = Task.objects.get(id=ObjectId(task_id))
+    except Task.DoesNotExist:
+        return Response(
+            {'error': 'Task not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        logger.error(f"Error fetching task {task_id}: {str(e)}")
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    try:
+        # Update task status and add completion metadata
+        task.status = 'completed'
+        task.completion_date = timezone.now()
+        task.completed_by = request.data.get('completed_by')
+        task.completion_notes = request.data.get('completion_notes', '')
+        task.save()
+
+        return Response({
+            'message': 'Task marked as complete successfully',
+            'task': TaskSerializer(task).data
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Error completing task {task_id}: {str(e)}")
         return Response(
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
