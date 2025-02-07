@@ -6,7 +6,7 @@ from langchain.chains import RetrievalQA
 from langchain.schema import Document as LangchainDocument
 import logging
 from pathlib import Path
-from authentication.models import Document
+from authentication.models import FileDocument
 
 def get_local_model_path():
     """Get the path to the local GGUF model"""
@@ -33,7 +33,7 @@ def create_rag_system():
         )
 
         # 3. Get documents from database and convert to Langchain format
-        mongo_docs = Document.objects.all()
+        mongo_docs = FileDocument.objects.all()
         if not mongo_docs:
             print("No documents found in database")
             return None

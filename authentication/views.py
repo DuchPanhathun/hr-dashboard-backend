@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from .models import User, Staff, Notification, Project, ProjectStaff, Document, Skill
+from .models import User, Staff, Notification, Project, ProjectStaff, FileDocument, Skill
 from django.core.exceptions import ObjectDoesNotExist
 from .serializers import StaffSerializer, ProjectSerializer, ProjectStaffSerializer, DocumentSerializer
 import pandas as pd
@@ -478,7 +478,7 @@ def upload_document(request):
                     content = f.read()
 
             # Create document in database
-            document = Document(
+            document = FileDocument(
                 title=file.name,
                 content=content,
                 file_type=file_type,
@@ -509,7 +509,7 @@ def upload_document(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def list_documents(request):
-    documents = Document.objects.all().order_by('-uploaded_at')
+    documents = FileDocument.objects.all().order_by('-uploaded_at')
     serializer = DocumentSerializer(documents, many=True)
     return Response(serializer.data)
 
