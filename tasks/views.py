@@ -8,7 +8,7 @@ from datetime import datetime
 import logging
 from authentication.models import Staff, Project, ProjectStaff
 from .models import Task, Skill
-from django.db.models import Sum, F
+from django.db.models import Sum
 from django.utils import timezone
 from .serializers import TaskSerializer, StaffSerializer, ProjectSerializer, ProjectStaffSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -506,21 +506,46 @@ def get_project_staff(request):
 @permission_classes([AllowAny])
 def get_task_stats(request):
     try:
-        total_tasks = Task.objects.count()
-        unassigned_tasks = Task.objects.filter(status='unassigned').count()
-        in_progress_tasks = Task.objects.filter(status='in_progress').count()
-        completed_tasks = Task.objects.filter(status='completed').count()
+        # Add debug logging
+        logger.debug("Starting task stats calculation")
         
-        return Response({
-            'total': total_tasks,
-            'unassigned': unassigned_tasks,
-            'in_progress': in_progress_tasks,
-            'completed': completed_tasks
-        })
+        # Use aggregate to get counts in one query
+        pipeline = [
+            {
+                "$group": {
+                    "_id": "$status",
+                    "count": {"$sum": 1}
+                }
+            }
+        ]
+        
+        # Execute aggregation
+        stats = Task.objects.aggregate(pipeline)
+        
+        # Initialize counters
+        result = {
+            'total': 0,
+            'unassigned': 0,
+            'assigned': 0,
+            'in_progress': 0,
+            'completed': 0
+        }
+        
+        # Process aggregation results
+        for stat in stats:
+            status = stat['_id']
+            count = stat['count']
+            if status in result:
+                result[status] = count
+                result['total'] += count
+        
+        logger.debug(f"Task stats calculated successfully: {result}")
+        return Response(result)
+        
     except Exception as e:
         logger.error(f"Error getting task stats: {str(e)}", exc_info=True)
         return Response(
-            {'error': str(e)},
+            {'error': f"Failed to fetch task stats: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -570,36 +595,55 @@ def create_skill(request):
 @permission_classes([AllowAny])
 def complete_task(request, task_id):
     try:
-        # Convert string ID to ObjectId
+        # Convert string task_id to ObjectId
         task = Task.objects.get(id=ObjectId(task_id))
+        
+        # Get the assigned staff member
+        assigned_staff = task.assigned_staff
+        if assigned_staff:
+            # Update staff's total_loe by adding the task's required_loe
+            current_total_loe = float(getattr(assigned_staff, 'total_loe', 0) or 0)
+            new_total_loe = current_total_loe + float(task.required_loe)
+            assigned_staff.total_loe = new_total_loe
+            assigned_staff.save()
+            logger.info(f"Updated staff {str(assigned_staff.id)} total_loe to {new_total_loe}")
+        
+        # Update task fields
+        task.status = 'completed'
+        task.completion_date = timezone.now()
+        if request.data.get('completion_notes'):
+            task.completion_notes = request.data.get('completion_notes')
+        if request.data.get('completed_by'):
+            task.completed_by = str(request.data.get('completed_by'))
+            
+        task.save()
+        
+        # Create a dictionary with the task data instead of using serializer
+        response_data = {
+            'task': {
+                'id': str(task.id),
+                'title': task.title,
+                'status': task.status,
+                'completion_date': task.completion_date,
+                'completed_by': task.completed_by,
+                'completion_notes': task.completion_notes,
+                'required_loe': task.required_loe,
+                'project_name': task.project.award_name if task.project else None,
+                'staff_name': task.assigned_staff.staff_name if task.assigned_staff else None,
+            },
+            'staff_total_loe': new_total_loe if assigned_staff else None
+        }
+        
+        return Response(response_data)
+        
     except Task.DoesNotExist:
         return Response(
-            {'error': 'Task not found'},
+            {'error': 'Task not found'}, 
             status=status.HTTP_404_NOT_FOUND
         )
     except Exception as e:
-        logger.error(f"Error fetching task {task_id}: {str(e)}")
+        logger.error(f"Error completing task {task_id}: {str(e)}", exc_info=True)
         return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-    try:
-        # Update task status and add completion metadata
-        task.status = 'completed'
-        task.completion_date = timezone.now()
-        task.completed_by = request.data.get('completed_by')
-        task.completion_notes = request.data.get('completion_notes', '')
-        task.save()
-
-        return Response({
-            'message': 'Task marked as complete successfully',
-            'task': TaskSerializer(task).data
-        }, status=status.HTTP_200_OK)
-
-    except Exception as e:
-        logger.error(f"Error completing task {task_id}: {str(e)}")
-        return Response(
-            {'error': str(e)},
+            {'error': str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
