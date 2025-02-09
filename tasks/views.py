@@ -478,66 +478,18 @@ def delete_task(request, task_id):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
-def get_staff_details(request):
-    try:
-        staff = Staff.objects.all()
-        serializer = StaffSerializer(staff, many=True)
-        return Response(serializer.data)
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_project_staff(request):
-    try:
-        project_staff = ProjectStaff.objects.all().select_related('staff', 'project')
-        serializer = ProjectStaffSerializer(project_staff, many=True)
-        return Response(serializer.data)
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
 def get_task_stats(request):
     try:
-        # Add debug logging
         logger.debug("Starting task stats calculation")
         
-        # Use aggregate to get counts in one query
-        pipeline = [
-            {
-                "$group": {
-                    "_id": "$status",
-                    "count": {"$sum": 1}
-                }
-            }
-        ]
-        
-        # Execute aggregation
-        stats = Task.objects.aggregate(pipeline)
-        
-        # Initialize counters
+        # Use MongoEngine's count method
         result = {
-            'total': 0,
-            'unassigned': 0,
-            'assigned': 0,
-            'in_progress': 0,
-            'completed': 0
+            'total': Task.objects.count(),
+            'unassigned': Task.objects.filter(status='unassigned').count(),
+            'assigned': Task.objects.filter(status='assigned').count(),
+            'in_progress': Task.objects.filter(status='in_progress').count(),
+            'completed': Task.objects.filter(status='completed').count()
         }
-        
-        # Process aggregation results
-        for stat in stats:
-            status = stat['_id']
-            count = stat['count']
-            if status in result:
-                result[status] = count
-                result['total'] += count
         
         logger.debug(f"Task stats calculated successfully: {result}")
         return Response(result)
@@ -546,48 +498,6 @@ def get_task_stats(request):
         logger.error(f"Error getting task stats: {str(e)}", exc_info=True)
         return Response(
             {'error': f"Failed to fetch task stats: {str(e)}"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def list_skills(request):
-    try:
-        skills = Skill.objects.all()
-        skills_data = [{
-            'id': str(skill.id),
-            'name': skill.name,
-            'category': skill.category
-        } for skill in skills]
-        
-        return Response(skills_data)
-    except Exception as e:
-        logger.error(f"Error fetching skills: {str(e)}")
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def create_skill(request):
-    try:
-        data = request.data
-        skill = Skill(
-            name=data['name'],
-            category=data['category']
-        )
-        skill.save()
-        
-        return Response({
-            'id': str(skill.id),
-            'name': skill.name,
-            'category': skill.category
-        }, status=status.HTTP_201_CREATED)
-    except Exception as e:
-        logger.error(f"Error creating skill: {str(e)}")
-        return Response(
-            {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -645,5 +555,73 @@ def complete_task(request, task_id):
         logger.error(f"Error completing task {task_id}: {str(e)}", exc_info=True)
         return Response(
             {'error': str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_staff_details(request):
+    try:
+        staff = Staff.objects.all()
+        serializer = StaffSerializer(staff, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_project_staff(request):
+    try:
+        project_staff = ProjectStaff.objects.all().select_related('staff', 'project')
+        serializer = ProjectStaffSerializer(project_staff, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def list_skills(request):
+    try:
+        skills = Skill.objects.all()
+        skills_data = [{
+            'id': str(skill.id),
+            'name': skill.name,
+            'category': skill.category
+        } for skill in skills]
+        
+        return Response(skills_data)
+    except Exception as e:
+        logger.error(f"Error fetching skills: {str(e)}")
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def create_skill(request):
+    try:
+        data = request.data
+        skill = Skill(
+            name=data['name'],
+            category=data['category']
+        )
+        skill.save()
+        
+        return Response({
+            'id': str(skill.id),
+            'name': skill.name,
+            'category': skill.category
+        }, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        logger.error(f"Error creating skill: {str(e)}")
+        return Response(
+            {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
