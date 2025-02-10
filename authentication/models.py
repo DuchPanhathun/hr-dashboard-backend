@@ -64,21 +64,6 @@ class Staff(Document):
     def __str__(self):
         return self.staff_name 
 
-class Notification(Document):
-    id = SequenceField(primary_key=True)
-    message = StringField(required=True)
-    action_type = StringField(required=True)  # 'add', 'update', 'delete'
-    staff_name = StringField(required=True)
-    user_name = StringField(required=True)
-    details = StringField(required=True)
-    timestamp = DateTimeField(default=timezone.now)
-    is_read = BooleanField(default=False)
-
-    meta = {
-        'collection': 'notifications',
-        'ordering': ['-timestamp']
-    } 
-
 class Project(Document):
     id = SequenceField(primary_key=True)
     award_name = StringField(max_length=200, blank=False)
@@ -112,6 +97,21 @@ class ProjectStaff(Document):
 
     def __str__(self):
         return f"{self.project.award_name} - {self.staff.staff_name}" 
+
+class Notification(Document):
+    id = SequenceField(primary_key=True)
+    message = StringField(required=True)
+    action_type = StringField(required=True)  # 'add', 'update', 'delete'
+    staff_name = StringField(required=True)
+    user_name = StringField(required=True)
+    details = StringField(required=True)
+    timestamp = DateTimeField(default=timezone.now)
+    is_read = BooleanField(default=False)
+
+    meta = {
+        'collection': 'notifications',
+        'ordering': ['-timestamp']
+    } 
 
 class FileDocument(Document):
     id = SequenceField(primary_key=True)
